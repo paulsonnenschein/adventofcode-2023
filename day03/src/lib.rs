@@ -1,32 +1,88 @@
-pub fn parse(input: &str) -> Vec<Vec<char>> {
-    input.trim().lines().map(|line| line.chars().collect()).collect()
+use std::ops::RangeInclusive;
+
+pub struct Input {
+    numbers: Vec<Vec<Number>>,
+    symbols: Vec<Vec<Symbol>>,
 }
 
-pub fn part1(input: &[Vec<char>]) -> u32 {
-    let mut sum = 0u32;
+struct Number {
+    cols: RangeInclusive<isize>, // including 1 col before and after
+    value: u32,
+}
 
-    for (row_idx, row) in input.iter().enumerate() {
+struct Symbol {
+    col: isize,
+    symbol: char,
+}
+
+pub fn parse(input: &str) -> Input {
+    let mut numbers = vec![];
+    let mut symbols = vec![];
+    for line in input.trim().lines() {
+        let mut line_numbers = vec![];
+        let mut line_symbols = vec![];
+
         let mut num_acc = 0u32;
-        let mut len_acc = 0u32;
-        for (col_idx, c) in row.iter().enumerate() {
+        let mut len_acc = 0isize;
+
+        for (col, c) in line.chars().enumerate() {
             if c.is_ascii_digit() {
                 let digit = c.to_digit(10).unwrap();
                 num_acc = num_acc * 10 + digit;
                 len_acc += 1;
             } else {
                 if num_acc > 0 {
-                    if touches_part(input, row_idx, col_idx, len_acc) {
-                        sum += num_acc;
-                    }
+                    line_numbers.push(Number {
+                        cols: (col as isize - (len_acc + 1))..=col as isize,
+                        value: num_acc,
+                    });
 
                     num_acc = 0;
                     len_acc = 0;
                 }
+                if c != '.' {
+                    line_symbols.push(Symbol {
+                        col: col as isize,
+                        symbol: c,
+                    })
+                }
             }
         }
+
         if num_acc > 0 {
-            if touches_part(input, row_idx, row.len(), len_acc) {
-                sum += num_acc;
+            let col = line.len();
+            line_numbers.push(Number {
+                cols: (col as isize - (len_acc + 1))..=col as isize,
+                value: num_acc,
+            });
+        }
+
+        numbers.push(line_numbers);
+        symbols.push(line_symbols);
+    }
+
+    Input { numbers, symbols }
+}
+
+pub fn part1(input: &Input) -> u32 {
+    let mut sum = 0u32;
+
+    for (row_idx, row) in input.numbers.iter().enumerate() {
+        let empty = vec![];
+        let symbols_above = if row_idx > 0 {
+            &input.symbols[row_idx - 1]
+        } else {
+            &empty
+        };
+        let symbols = &input.symbols[row_idx];
+        let symbols_below = input.symbols.get(row_idx + 1).unwrap_or(&empty);
+
+        for num in row {
+            if symbols_above.iter().any(|s| num.cols.contains(&s.col))
+                || symbols.iter().any(|s| num.cols.contains(&s.col))
+                || symbols_below.iter().any(|s| num.cols.contains(&s.col))
+            {
+                sum += num.value;
             }
         }
     }
@@ -34,44 +90,38 @@ pub fn part1(input: &[Vec<char>]) -> u32 {
     sum
 }
 
+pub fn part2(input: &Input) -> u32 {
+    let mut sum = 0u32;
 
-fn check_idx(input: &[Vec<char>], row: usize, col: usize) -> bool {
-    let c = input.get(row).and_then(|row| row.get(col)).unwrap_or(&'.');
-    !c.is_ascii_digit() && c != &'.'
-}
+    for (row_idx, row) in input.symbols.iter().enumerate() {
+        for symbol in row.iter().filter(|sym| sym.symbol == '*') {
+            let empty = vec![];
+            let numbers_above = if row_idx > 0 {
+                &input.numbers[row_idx - 1]
+            } else {
+                &empty
+            };
+            let numbers = &input.numbers[row_idx];
+            let numbers_below = input.numbers.get(row_idx + 1).unwrap_or(&empty);
 
-fn touches_part(input: &[Vec<char>], row: usize, col: usize, num_len: u32) -> bool {
-    let row = row as isize;
-    let col = col as isize;
-    let num_len = num_len as isize;
-    let top_left = (row - 1, col - (num_len + 1));
-    let bottom_right = (row + 1, col);
+            let matching_numbers = numbers_above
+                .iter()
+                .filter(|num| num.cols.contains(&symbol.col))
+                .chain(numbers.iter().filter(|num| num.cols.contains(&symbol.col)))
+                .chain(
+                    numbers_below
+                        .iter()
+                        .filter(|num| num.cols.contains(&symbol.col)),
+                )
+                .collect::<Vec<_>>();
 
-    // check top
-    for col_idx in top_left.1 ..= bottom_right.1 {
-        if check_idx(input, top_left.0 as usize, col_idx as usize) {
-            return true
+            if matching_numbers.len() == 2 {
+                sum += matching_numbers[0].value * matching_numbers[1].value;
+            }
         }
     }
 
-    // check left
-    if check_idx(input, row as usize, top_left.1 as usize) {
-        return true
-    }
-
-    // check right
-    if check_idx(input, row as usize, col as usize) {
-        return true
-    }
-
-    // check bottom
-    for col_idx in top_left.1 ..= bottom_right.1 {
-        if check_idx(input, bottom_right.0 as usize, col_idx as usize) {
-            return true
-        }
-    }
-
-    false
+    sum
 }
 
 #[cfg(test)]
@@ -83,7 +133,7 @@ mod tests {
         let input = include_str!("./input.txt");
         let parsed = parse(input);
         println!("{:?}", part1(&parsed));
-        //println!("{:?}", part2(parsed));
+        println!("{:?}", part2(&parsed));
     }
 
     #[test]
