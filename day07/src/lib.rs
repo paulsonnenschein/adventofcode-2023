@@ -8,6 +8,10 @@ impl Ord for Card {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.eq(other) {
             Ordering::Equal
+        } else if self.0 == 'J' {
+            Ordering::Less
+        } else if other.0 == 'J' {
+            Ordering::Greater
         } else if self.0.is_ascii_digit() {
             if other.0.is_ascii_digit() {
                 self.0.cmp(&other.0)
@@ -24,8 +28,8 @@ impl Ord for Card {
                 (_, 'K') => Ordering::Less,
                 ('Q', _) => Ordering::Greater,
                 (_, 'Q') => Ordering::Less,
-                ('J', _) => Ordering::Greater,
-                (_, 'J') => Ordering::Less,
+                ('F', _) => Ordering::Greater,
+                (_, 'F') => Ordering::Less,
                 _ => unreachable!("cant get here? {} {}", self.0, other.0),
             }
         }
@@ -52,25 +56,80 @@ impl Draw {
         let mut vec = self.0.to_vec();
         vec.sort();
 
-        if vec[0] == vec[4] {
+        let num_j = vec.iter().take_while(|c| c.0 == 'J').count();
+
+        if Draw::is_five_of_a_kind(num_j, &vec) {
             HandType::FiveOfAKind
-        } else if vec[0] == vec[3] || vec[1] == vec[4] {
+        } else if Draw::is_four_of_a_kind(num_j, &vec) {
             HandType::FourOfAKind
-        } else if (vec[0] == vec[2] && vec[3] == vec[4]) || (vec[0] == vec[1] && vec[2] == vec[4]) {
+        } else if Draw::is_full_house(num_j, &vec) {
             HandType::FullHouse
-        } else if vec
-            .windows(3)
-            .any(|win| win[0] == win[1] && win[0] == win[2])
-        {
+        } else if Draw::is_three_of_a_kind(num_j, &vec) {
             HandType::ThreeOfAKind
         } else {
-            let pairs = vec.windows(2).filter(|win| win[0] == win[1]).count();
+            let pairs = Draw::count_pairs(num_j, &vec);
             match pairs {
                 2 => HandType::TwoPair,
                 1 => HandType::OnePair,
                 _ => HandType::HighCard,
             }
         }
+    }
+
+    fn is_five_of_a_kind(num_j: usize, cards: &[Card]) -> bool {
+        for card in &cards[num_j..] {
+            if card != &cards[4] {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn is_four_of_a_kind(num_j: usize, cards: &[Card]) -> bool {
+        debug_assert!(num_j <= 3);
+
+        let window_size = 4 - num_j;
+        cards[num_j..]
+            .windows(window_size)
+            .any(|win| win.iter().all(|c| c == &win[window_size - 1]))
+    }
+
+    fn is_full_house(num_j: usize, cards: &[Card]) -> bool {
+        debug_assert!(num_j <= 2);
+
+        if num_j == 2 {
+            // in every situation where we can make a full house, we can also make a four of a kind
+            false
+        } else if num_j == 1 {
+            // we need two pairs
+            cards[1] == cards[2] && cards[3] == cards[4]
+        } else {
+            // 11222 or 22233
+            (cards[0] == cards[2] && cards[3] == cards[4])
+                || (cards[0] == cards[1] && cards[2] == cards[4])
+        }
+    }
+
+    fn is_three_of_a_kind(num_j: usize, cards: &[Card]) -> bool {
+        debug_assert!(num_j <= 2);
+
+        if num_j == 2 {
+            // we can always make a three of a kind
+            true
+        } else {
+            let window_size = 3 - num_j;
+            cards[num_j..]
+                .windows(window_size)
+                .any(|win| win.iter().all(|c| c == &win[window_size - 1]))
+        }
+    }
+
+    fn count_pairs(num_j: usize, cards: &[Card]) -> usize {
+        debug_assert!(num_j <= 1);
+
+        // we can always make another pair with a J
+        cards.windows(2).filter(|win| win[0] == win[1]).count() + num_j
     }
 }
 
@@ -156,7 +215,25 @@ pub fn parse(input: &str) -> Vec<Draw> {
 
 pub fn part1(input: &[Draw]) -> u32 {
     let mut input = input.to_vec();
+    // replace all Jokers with a fake card that takes the role of card J in part1
+    input.iter_mut().for_each(|draw| {
+        draw.0.iter_mut().for_each(|card| {
+            if card.0 == 'J' {
+                card.0 = 'F'
+            }
+        })
+    });
     input.sort();
+    input
+        .iter()
+        .enumerate()
+        .map(|(i, draw)| (i + 1) as u32 * draw.1)
+        .sum()
+}
+
+pub fn part2(mut input: Vec<Draw>) -> u32 {
+    input.sort();
+    //dbg!(&input);
     input
         .iter()
         .enumerate()
@@ -173,6 +250,6 @@ mod tests {
         let input = include_str!("./input.txt");
         let parsed = parse(input);
         println!("{:?}", part1(&parsed));
-        //println!("{:?}", part2(parsed));
+        println!("{:?}", part2(parsed));
     }
 }
